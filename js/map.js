@@ -5,7 +5,8 @@
 
 export const TYPE_COLORS = { RD: "#c92a2a", T: "#1864ab", P: "#2b8a3e" };
 const DEAD_COLOR = "#868e96";
-const TAP_RADIUS = 26;      // px: how close a tap must be to a point
+const TAP_RADIUS = 32;      // px: how close a tap must be to a point symbol (its label counts too)
+const LABEL_SLACK = 8;      // px around a label that still counts as a tap on it
 const MIN_TEXT_PX = 7;      // drawing text smaller than this on screen is not drawn
 
 // OneMap (Singapore Land Authority) base map: 256 px Web Mercator tiles, zoom 11 to 19 (land lots to 20).
@@ -355,11 +356,13 @@ export class PointMap {
     ctx.font = "600 13px system-ui, sans-serif";
     ctx.textBaseline = "middle";
     const placed = [];
+    this.labelBoxes = [];                 // labels on the screen, so a tap on a number opens its point
     for (const { p, sx, sy, isSel } of [...visible].reverse()) {
       const lx = sx + r + 6, tw = ctx.measureText(p.label).width;
       const box = [lx - 2, sy - 9, lx + tw + 2, sy + 9];
       if (!isSel && placed.some((q) => box[0] < q[2] && box[2] > q[0] && box[1] < q[3] && box[3] > q[1])) continue;
       placed.push(box);
+      this.labelBoxes.push({ item: p, box: [sx - r, box[1], box[2], box[3]] });
       ctx.fillStyle = "rgba(255,255,255,0.85)";
       ctx.fillRect(box[0], box[1], box[2] - box[0], 18);
       ctx.fillStyle = isSel ? "#0b3d91" : "#1b1f1d";
@@ -440,6 +443,7 @@ export class PointMap {
     ctx.fillText(label, x + px + 6, y + 1);
   }
 
+  // The point under a tap: on or near its symbol, or on its number label.
   itemAt(sx, sy) {
     let best = null, bestD = TAP_RADIUS;
     for (const p of this.items) {
@@ -447,7 +451,13 @@ export class PointMap {
       const d = Math.hypot(tx - sx, ty - sy);
       if (d < bestD) { best = p; bestD = d; }
     }
-    return best;
+    if (best) return best;
+    for (const { item, box } of this.labelBoxes || []) {
+      if (sx >= box[0] - LABEL_SLACK && sx <= box[2] + LABEL_SLACK && sy >= box[1] - LABEL_SLACK && sy <= box[3] + LABEL_SLACK) {
+        return item;
+      }
+    }
+    return null;
   }
 
   bindEvents() {

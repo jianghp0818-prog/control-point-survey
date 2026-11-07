@@ -1,7 +1,7 @@
 // Keeps the app working without a network: the newest version from the server when it answers within a few
 // seconds, otherwise the copy saved on the phone. Field data is in IndexedDB, not in this cache.
 
-const CACHE = "cpsurvey-0.1.2";   // change with APP_VERSION in js/app.js so phones fetch the new version
+const CACHE = "cpsurvey-0.1.3";   // change with APP_VERSION in js/app.js so phones fetch the new version
 const SHELL = [
   "./", "index.html", "styles.css", "manifest.webmanifest",
   "js/app.js", "js/db.js", "js/map.js", "js/photos.js", "js/export.js", "js/numbers.js",

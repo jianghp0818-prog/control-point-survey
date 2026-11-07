@@ -11,7 +11,7 @@ import { TYPE_LABELS, checkNumber, checkPrefix, checkProjectCode, naturalCompare
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
-const APP_VERSION = "0.1.2";     // change with CACHE in sw.js
+const APP_VERSION = "0.1.3";     // change with CACHE in sw.js
 const SVY21 = "+proj=tmerc +lat_0=1.366666666666667 +lon_0=103.8333333333333 +k=1 +x_0=28001.642 +y_0=38744.572 " +
   "+ellps=WGS84 +units=m +no_defs";
 const DEFAULT_ORIGIN = [28000, 38000];                           // SVY21, near the false origin
@@ -1194,7 +1194,7 @@ async function start() {
   const standalone = navigator.standalone || window.matchMedia?.("(display-mode: standalone)").matches;
   document.documentElement.classList.toggle("standalone", Boolean(standalone));
   bind();
-  $("#app-version").textContent = `App version ${APP_VERSION}`;
+  $("#app-version").textContent = `App version ${APP_VERSION} · ${standalone ? "opened from the home screen" : "opened in the browser"}`;
   state.surveyor = await db.getSetting("surveyor", "");
   state.prefix = await db.getSetting("prefix", "");
   state.newType = await db.getSetting("newType", "T");

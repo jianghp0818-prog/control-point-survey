@@ -36,7 +36,11 @@ code { font-size: 0.9em; }
 .ok-text { color: var(--p); }
 .note { background: #fff4d6; border: 1px solid #f2c94c; border-radius: 8px; padding: 8px 10px; color: #5c4400; }
 
-.screen { position: fixed; inset: 0; display: flex; flex-direction: column; }
+/* Height from the screen itself (dvh), not bottom: 0. Opened from the iPhone home screen with the page drawn under
+   the status bar, 'bottom: 0' ends one status-bar height above the bottom of the screen. */
+:root { --screen-h: 100vh; }
+@supports (height: 100dvh) { :root { --screen-h: 100dvh; } }
+.screen { position: fixed; top: 0; left: 0; right: 0; height: var(--screen-h); display: flex; flex-direction: column; }
 
 /* ---- top bar */
 .bar {
@@ -153,10 +157,10 @@ textarea.input { resize: vertical; }
 
 /* ---- side panels */
 .panel {
-  position: fixed; top: var(--bar-h, 56px); bottom: 0; z-index: 10;
+  position: fixed; top: var(--bar-h, 56px); height: calc(var(--screen-h) - var(--bar-h, 56px)); z-index: 10;
   background: var(--card); box-shadow: 0 0 18px rgba(0,0,0,.18); display: flex; flex-direction: column;
 }
-.panel.left { left: 0; width: min(340px, 100%); bottom: var(--nav-h, 0px); }
+.panel.left { left: 0; width: min(340px, 100%); height: calc(var(--screen-h) - var(--bar-h, 56px) - var(--nav-h, 0px)); }
 .panel.right { right: 0; width: min(440px, 100%); }
 .panel-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .panel-head > div:first-child { flex: 1; min-width: 0; }
@@ -252,7 +256,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .photo-dialog { width: min(900px, calc(100% - 16px)); }
 .photo-dialog img { width: 100%; max-height: 75vh; object-fit: contain; background: #111; border-radius: 8px; }
 .toast {
-  position: fixed; left: 50%; bottom: calc(var(--nav-h, 0px) + 16px); transform: translateX(-50%); z-index: 50;
+  position: fixed; left: 50%; top: calc(var(--screen-h) - var(--nav-h, 0px) - 16px); transform: translate(-50%, -100%); z-index: 50;
   background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 10px; max-width: calc(100% - 32px);
   box-shadow: 0 6px 18px rgba(0,0,0,.3);
 }
@@ -272,5 +276,5 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 /* ---- bottom of the screen: opened from the home screen icon the bars keep clear of the home indicator; in the
    Safari browser its own toolbar is below the page, so no extra space is needed */
 #home { background: var(--bg); }
-.standalone .bottom-nav { padding-bottom: max(6px, calc(env(safe-area-inset-bottom) - 12px)); }
-.standalone .form-foot { padding-bottom: max(10px, calc(env(safe-area-inset-bottom) - 8px)); }
+.standalone .bottom-nav { padding-bottom: max(4px, calc(env(safe-area-inset-bottom) - 20px)); }
+.standalone .form-foot { padding-bottom: max(8px, calc(env(safe-area-inset-bottom) - 16px)); }
