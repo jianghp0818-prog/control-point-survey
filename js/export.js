@@ -86,8 +86,8 @@ export async function buildFieldZip({ project, points, mode, getPhoto, surveyor,
   return { blob, name: `${fileKey(project.code)}_field_${stamp()}.zip`, exported: list, photoCount };
 }
 
-export async function shareOrDownload(blob, name) {
-  const file = new File([blob], name, { type: "application/zip" });
+export async function shareOrDownload(blob, name, type = "application/zip") {
+  const file = new File([blob], name, { type });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title: name });

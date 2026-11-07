@@ -6,12 +6,13 @@ import { db } from "./db.js";
 import { PointMap } from "./map.js";
 import { compressPhoto } from "./photos.js";
 import { STATUS_LABELS, buildFieldZip, exportCandidates, shareOrDownload } from "./export.js";
+import { WrongPassword, checkPin, decryptFile, encryptFile, hashPin, isEncrypted } from "./secure.js";
 import { TYPE_LABELS, checkNumber, checkPrefix, checkProjectCode, naturalCompare, nextNumber, normalize,
   normalizeProject, typeOf } from "./numbers.js";
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
-const APP_VERSION = "0.1.3";     // change with CACHE in sw.js
+const APP_VERSION = "0.2.0";     // change with CACHE in sw.js
 const SVY21 = "+proj=tmerc +lat_0=1.366666666666667 +lon_0=103.8333333333333 +k=1 +x_0=28001.642 +y_0=38744.572 " +
   "+ellps=WGS84 +units=m +no_defs";
 const DEFAULT_ORIGIN = [28000, 38000];                           // SVY21, near the false origin
@@ -44,6 +45,11 @@ const state = {
   listFilter: "all",
   projectFilter: "",
   thumbUrls: [],
+  filePassword: "",     // file password of the office (packs and exports are encrypted with it)
+  pin: null,            // {salt, hash, length} of the app PIN, or null
+  hiddenAt: 0,
+  pinEntry: "",
+  pinFails: 0,
   pendingPhoto: null,   // {kind, replaceId}
 };
 let map;
@@ -243,13 +249,170 @@ async function newProject() {
 }
 
 // ---------------------------------------------------------------- packs from the office
+// A pack from the office: encrypted (.cppack, opened with the file password) or plain (.cppack.json).
 async function openPackFile(file) {
   try {
-    const pack = JSON.parse(await file.text());
-    await loadPack(pack, { save: true });
+    let bytes = new Uint8Array(await file.arrayBuffer());
+    if (isEncrypted(bytes)) {
+      let password = state.filePassword;
+      let remember = false;
+      for (;;) {
+        try {
+          bytes = (await decryptFile(bytes, password)).data;
+          break;
+        } catch (err) {
+          if (!(err instanceof WrongPassword)) throw err;
+          const answer = await askPassword(password ? "Wrong file password. Enter the file password from the office:"
+            : `${file.name} is protected. Enter the file password from the office:`, true);
+          if (!answer) return;
+          ({ password, remember } = answer);
+        }
+      }
+      if (remember && password !== state.filePassword) await saveFilePassword(password);
+    } else {
+      toast("This pack is not encrypted. Ask the office to set the file password.", 5000);
+    }
+    await loadPack(JSON.parse(new TextDecoder().decode(bytes)), { save: true });
   } catch (err) {
     alert(`Could not open ${file.name}: ${err.message}`);
   }
+}
+
+function askPassword(text, rememberOption = false, title = "File password") {
+  const dlg = $("#pw-dialog");
+  $("#pw-title").textContent = title;
+  $("#pw-text").textContent = text;
+  $("#pw-input").value = "";
+  $("#pw-msg").textContent = "";
+  $("#pw-remember-row").hidden = !rememberOption;
+  dlg.returnValue = "";
+  dlg.showModal();
+  return new Promise((resolve) => dlg.addEventListener("close", () => {
+    const pw = $("#pw-input").value;
+    resolve(dlg.returnValue === "ok" && pw ? { password: pw, remember: $("#pw-remember").checked } : null);
+  }, { once: true }));
+}
+
+async function saveFilePassword(pw) {
+  state.filePassword = pw;
+  await db.setSetting("filePassword", pw);
+  renderSecurity();
+}
+
+// ---------------------------------------------------------------- app PIN and lock screen
+const LOCK_AFTER_MS = 5 * 60 * 1000;
+
+function renderSecurity() {
+  $("#file-pw").value = "";
+  $("#file-pw").placeholder = state.filePassword ? "•••••••• (saved)" : "Same as in the office program";
+  $("#file-pw-status").textContent = state.filePassword
+    ? "Saved on this phone: packs open without asking, exports are encrypted."
+    : "Not set: exports are NOT encrypted, and encrypted packs ask for it.";
+  $("#pin-status").textContent = state.pin ? "· on" : "· off";
+  $("#pin-set").textContent = state.pin ? "Change PIN" : "Set PIN";
+  $("#pin-remove").hidden = !state.pin;
+}
+
+function lockNow() {
+  if (!state.pin) return;
+  state.pinEntry = "";
+  $("#lock-msg").textContent = "Enter your PIN";
+  $("#lock").hidden = false;
+  renderDots();
+  document.activeElement?.blur?.();
+}
+
+function renderDots(shake = false) {
+  const dots = $("#pin-dots");
+  dots.innerHTML = Array.from({ length: state.pin?.length || 4 }, (_, i) => `<i class="${i < state.pinEntry.length ? "on" : ""}"></i>`).join("");
+  dots.classList.toggle("shake", shake);
+}
+
+async function pinKey(k) {
+  if ($("#lock").hidden || !state.pin) return;
+  if (k === "forgot") return forgotPin();
+  if (k === "del") state.pinEntry = state.pinEntry.slice(0, -1);
+  else if (/^\d$/.test(k) && state.pinEntry.length < state.pin.length) state.pinEntry += k;
+  renderDots();
+  if (state.pinEntry.length < state.pin.length) return;
+  const ok = await checkPin(state.pinEntry, state.pin);
+  state.pinEntry = "";
+  if (ok) {
+    state.pinFails = 0;
+    $("#lock").hidden = true;
+    return;
+  }
+  state.pinFails += 1;
+  renderDots(true);
+  if (state.pinFails >= 5) {                             // slow down guessing
+    const keys = $$("#keypad button");
+    keys.forEach((b) => (b.disabled = true));
+    $("#lock-msg").textContent = "Wrong PIN 5 times: wait 30 seconds";
+    setTimeout(() => {
+      keys.forEach((b) => (b.disabled = false));
+      state.pinFails = 0;
+      $("#lock-msg").textContent = "Enter your PIN";
+    }, 30000);
+  } else {
+    $("#lock-msg").textContent = "Wrong PIN";
+  }
+}
+
+// Forgotten PIN: the file password resets it; without one, only erasing the app's data on this phone is left.
+async function forgotPin() {
+  if (state.filePassword) {
+    const answer = await askPassword("Enter the file password (from the office) to remove the PIN:");
+    if (!answer) return;
+    if (answer.password !== state.filePassword) {
+      $("#lock-msg").textContent = "Wrong file password";
+      return;
+    }
+    state.pin = null;
+    await db.setSetting("pin", null);
+    $("#lock").hidden = true;
+    renderSecurity();
+    toast("PIN removed. Set a new one on the home screen (Settings).", 6000);
+    return;
+  }
+  const ok = await confirmBox("Without the file password the PIN cannot be reset. Erase ALL data of this app on this " +
+    "phone (projects, points not exported, photos) and start again?", "Erase everything");
+  if (!ok) return;
+  indexedDB.deleteDatabase("cpsurvey");
+  setTimeout(() => location.reload(), 500);
+}
+
+function pinDialog() {
+  const dlg = $("#pin-dialog");
+  const changing = Boolean(state.pin);
+  $("#pin-title").textContent = changing ? "Change app PIN" : "Set app PIN";
+  $("#pin-current-row").hidden = !changing;
+  for (const id of ["#pin-current", "#pin-new", "#pin-again"]) $(id).value = "";
+  $("#pin-msg").textContent = "";
+  dlg.returnValue = "";
+  dlg.showModal();
+}
+
+async function savePinFromDialog() {
+  const cur = $("#pin-current").value, pin = $("#pin-new").value, again = $("#pin-again").value;
+  const msg = $("#pin-msg");
+  if (state.pin && !(await checkPin(cur, state.pin))) return (msg.textContent = "The current PIN is wrong.");
+  if (!/^\d{4,6}$/.test(pin)) return (msg.textContent = "The PIN must be 4 to 6 digits.");
+  if (pin !== again) return (msg.textContent = "The two new PINs are not the same.");
+  state.pin = await hashPin(pin);
+  await db.setSetting("pin", state.pin);
+  $("#pin-dialog").close();
+  renderSecurity();
+  toast("PIN saved. It is asked when the app opens and after 5 minutes in the background.", 5000);
+}
+
+async function removePin() {
+  const answer = await askPassword("Enter the current PIN to remove it:", false, "Remove PIN");
+  if (!answer) return;
+  if (!(await checkPin(answer.password, state.pin))) return toast("Wrong PIN.");
+  state.pin = null;
+  await db.setSetting("pin", null);
+  renderSecurity();
+  toast("PIN removed.");
 }
 
 function photoBlob(dataUrl) {
@@ -925,6 +1088,10 @@ function openExport() {
   $("input[name=exp-mode][value=changed]").checked = changed > 0;
   $("input[name=exp-mode][value=all]").checked = changed === 0;
   $("#exp-status").textContent = state.project.lastExport ? `Last export: ${state.project.lastExport.slice(0, 16).replace("T", " ")}` : "Not exported yet.";
+  const lock = $("#exp-lock");
+  lock.textContent = state.filePassword ? "🔒 Encrypted with the file password (.cpzip)."
+    : "⚠ NOT encrypted: set the file password on the home screen (Settings) first.";
+  lock.className = `small ${state.filePassword ? "ok-text" : "warn-text"}`;
   $("#exp-go").disabled = false;
   $("#export-dialog").showModal();
 }
@@ -944,7 +1111,14 @@ async function doExport() {
       surveyor: state.surveyor, prefix: state.prefix,
       onProgress: (i, n) => (status.textContent = `Making the zip… ${i} of ${n}`),
     });
-    const how = await shareOrDownload(result.blob, result.name);
+    let { blob, name } = result;
+    if (state.filePassword) {                          // encrypted with the file password for the trip to the office
+      status.textContent = "Encrypting…";
+      blob = await encryptFile(new Uint8Array(await blob.arrayBuffer()), state.filePassword, "cpsurvey-field", name);
+      name = name.replace(/\.zip$/, ".cpzip");
+    }
+    result.name = name;
+    const how = await shareOrDownload(blob, name, state.filePassword ? "application/octet-stream" : "application/zip");
     if (how === "cancelled") {
       status.textContent = "Cancelled: nothing was sent.";
       $("#exp-go").disabled = false;
@@ -1044,6 +1218,27 @@ function bind() {
   $("#prefix").addEventListener("input", (e) => {
     $("#prefix-msg").textContent = checkPrefix(e.target.value);
   });
+  // file password, PIN, lock screen
+  $("#file-pw-save").onclick = async () => {
+    const pw = $("#file-pw").value;
+    if (!pw) return toast(state.filePassword ? "Type a new password to change it." : "Type the file password first.");
+    await saveFilePassword(pw);
+    toast("File password saved on this phone.");
+  };
+  $("#pin-set").onclick = pinDialog;
+  $("#pin-remove").onclick = removePin;
+  $("#pin-form").addEventListener("submit", (e) => {
+    if (e.submitter?.value !== "ok") return;
+    e.preventDefault();
+    savePinFromDialog();
+  });
+  $$("#keypad button").forEach((b) => (b.onclick = () => pinKey(b.dataset.k)));
+  document.addEventListener("keydown", (e) => {
+    if ($("#lock").hidden) return;
+    if (/^\d$/.test(e.key)) pinKey(e.key);
+    else if (e.key === "Backspace") pinKey("del");
+  });
+
   $("#prefix").addEventListener("change", (e) => {
     const p = normalize(e.target.value);
     e.target.value = p;
@@ -1202,6 +1397,14 @@ async function start() {
   state.retired = await db.getSetting("retired", {});
   state.master = await db.getSetting("master", null);
   state.basemap = { ...BASEMAP_DEFAULT, ...(await db.getSetting("basemap", {})) };
+  state.filePassword = await db.getSetting("filePassword", "");
+  state.pin = await db.getSetting("pin", null);
+  lockNow();                                            // the PIN first, before anything is shown
+  renderSecurity();
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) state.hiddenAt = Date.now();
+    else if (state.pin && state.hiddenAt && Date.now() - state.hiddenAt > LOCK_AFTER_MS) lockNow();
+  });
   $("#surveyor").value = state.surveyor;
   $("#prefix").value = state.prefix;
   await refreshKeys();

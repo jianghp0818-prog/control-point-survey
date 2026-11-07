@@ -19,6 +19,23 @@
 </head>
 <body>
 
+<!-- PIN lock -->
+<section id="lock" class="lock" hidden>
+  <div class="lock-box">
+    <img src="icons/icon-192.png" class="lock-logo" alt="">
+    <h1>Control Point Survey</h1>
+    <p id="lock-msg">Enter your PIN</p>
+    <div id="pin-dots" class="pin-dots"></div>
+    <div class="keypad" id="keypad">
+      <button type="button" data-k="1">1</button><button type="button" data-k="2">2</button><button type="button" data-k="3">3</button>
+      <button type="button" data-k="4">4</button><button type="button" data-k="5">5</button><button type="button" data-k="6">6</button>
+      <button type="button" data-k="7">7</button><button type="button" data-k="8">8</button><button type="button" data-k="9">9</button>
+      <button type="button" data-k="forgot" class="k-small">Forgot?</button><button type="button" data-k="0">0</button>
+      <button type="button" data-k="del" class="k-small" aria-label="Delete">&#9003;</button>
+    </div>
+  </div>
+</section>
+
 <!-- Home: projects on this phone -->
 <section id="home" class="screen">
   <header class="bar">
@@ -45,7 +62,7 @@
       <p class="muted small">A project pack (<code>.cppack.json</code>) has the project drawing and its control
         points; the master register pack has all control points of all projects (view only).</p>
       <label class="btn primary file-btn">Open pack…
-        <input type="file" id="pack-file" accept=".json,application/json" hidden>
+        <input type="file" id="pack-file" hidden>
       </label>
     </div>
     <div class="card">
@@ -66,12 +83,24 @@
       <ul id="retired-list" class="project-list"></ul>
     </div>
     <div class="card">
-      <h2>Surveyor</h2>
+      <h2>Settings</h2>
       <div class="row2">
         <label class="field">Name <input id="surveyor" class="input" placeholder="Your name" autocomplete="name"></label>
         <label class="field">Personal prefix <input id="prefix" class="input" placeholder="e.g. JHP" autocapitalize="characters" autocomplete="off" maxlength="6"></label>
       </div>
       <p id="prefix-msg" class="warn small"></p>
+      <div class="setting-row">
+        <label class="field">File password
+          <input id="file-pw" class="input" type="password" placeholder="Same as in the office program" autocomplete="new-password">
+        </label>
+        <button class="btn" id="file-pw-save" type="button">Save</button>
+      </div>
+      <p id="file-pw-status" class="muted small"></p>
+      <div class="setting-row">
+        <div class="field">App PIN <span id="pin-status" class="muted small"></span></div>
+        <button class="btn" id="pin-set" type="button">Set PIN</button>
+        <button class="btn ghost" id="pin-remove" type="button" hidden>Remove</button>
+      </div>
       <p class="muted small">The name is saved with every point. Your own numbers are the prefix and a number
         (JHP1, JHP2 …).</p>
       <p id="storage-info" class="muted small"></p>
@@ -269,6 +298,7 @@
     <label class="check"><input type="radio" name="exp-mode" value="all"> <span id="exp-all"></span></label>
     <p class="muted small">A zip with the points and photos. Send it to the office (WhatsApp, Gmail, Drive).
       Export at the end of each day: until then this phone has the only copy.</p>
+    <p id="exp-lock" class="small"></p>
     <p id="exp-status" class="small"></p>
     <div class="dialog-foot">
       <button class="btn" value="cancel">Close</button>
@@ -298,6 +328,40 @@
       <button class="btn" value="keep">Remove – real points, keep the numbers used</button>
       <button class="btn danger" value="free" id="rm-free">Remove – test only, free the numbers</button>
       <button class="btn ghost" value="cancel">Cancel</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- File password for an encrypted pack -->
+<dialog id="pw-dialog">
+  <form method="dialog" id="pw-form">
+    <h2 id="pw-title">File password</h2>
+    <p id="pw-text" class="small"></p>
+    <input id="pw-input" class="input" type="password" autocomplete="current-password">
+    <label class="check" id="pw-remember-row"><input type="checkbox" id="pw-remember" checked> Remember on this phone</label>
+    <p id="pw-msg" class="error-text small"></p>
+    <div class="dialog-foot">
+      <button class="btn" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn primary" value="ok" id="pw-ok">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Set or change the app PIN -->
+<dialog id="pin-dialog">
+  <form method="dialog" id="pin-form">
+    <h2 id="pin-title">Set app PIN</h2>
+    <p class="muted small">4 to 6 digits. Asked when the app opens and after 5 minutes in the background.</p>
+    <label class="field" id="pin-current-row">Current PIN
+      <input id="pin-current" class="input big" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off"></label>
+    <label class="field" id="pin-new-row">New PIN
+      <input id="pin-new" class="input big" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off"></label>
+    <label class="field" id="pin-again-row">New PIN again
+      <input id="pin-again" class="input big" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off"></label>
+    <p id="pin-msg" class="error-text small"></p>
+    <div class="dialog-foot">
+      <button class="btn" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn primary" value="ok" id="pin-ok">Save PIN</button>
     </div>
   </form>
 </dialog>
