@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#12355b">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Control Points">
+  <title>Control Point Survey</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="styles.css">
+  <script src="vendor/jszip.min.js" defer></script>
+  <script src="vendor/proj4.js" defer></script>
+  <script type="module" src="js/app.js"></script>
+</head>
+<body>
+
+<!-- Home: projects on this phone -->
+<section id="home" class="screen">
+  <header class="bar">
+    <img src="icons/icon-192.png" alt="" class="bar-logo">
+    <h1>Control Point Survey</h1>
+  </header>
+  <main class="home-main">
+    <div id="setup-note" class="note" hidden>Enter your name and personal prefix first (Surveyor, below).</div>
+    <div id="backup-note" class="note" hidden></div>
+    <div class="card">
+      <h2>Projects on this phone</h2>
+      <ul id="project-list" class="project-list"></ul>
+      <p id="no-projects" class="muted">No projects yet. Open a project pack from the office, or start a project
+        with its code below.</p>
+    </div>
+    <div class="card">
+      <h2>Open a pack from the office</h2>
+      <p class="muted small">A project pack (<code>.cppack.json</code>) has the project drawing and its control
+        points; the master register pack has all control points of all projects (view only).</p>
+      <label class="btn primary file-btn">Open pack…
+        <input type="file" id="pack-file" accept=".json,application/json" hidden>
+      </label>
+    </div>
+    <div class="card">
+      <h2>New project</h2>
+      <div class="row2">
+        <label class="field">Project code <input id="new-code" class="input" placeholder="e.g. CAG-T5" autocapitalize="characters" autocomplete="off"></label>
+        <label class="field">Name <input id="new-name" class="input" placeholder="Project name" autocomplete="off"></label>
+      </div>
+      <p id="new-code-msg" class="warn small"></p>
+      <button class="btn" id="new-project">Start project</button>
+      <p class="muted small">Without a project pack the map shows OneMap only. Open the project pack later to add
+        the drawing; points recorded here are kept.</p>
+    </div>
+    <div class="card" id="master-card" hidden>
+      <h2>Master register</h2>
+      <p id="master-info" class="muted small"></p>
+      <button class="btn" id="open-master">View all control points</button>
+    </div>
+    <div class="card">
+      <h2>Surveyor</h2>
+      <div class="row2">
+        <label class="field">Name <input id="surveyor" class="input" placeholder="Your name" autocomplete="name"></label>
+        <label class="field">Personal prefix <input id="prefix" class="input" placeholder="e.g. JHP" autocapitalize="characters" autocomplete="off" maxlength="6"></label>
+      </div>
+      <p id="prefix-msg" class="warn small"></p>
+      <p class="muted small">The name is saved with every point. Your own numbers are the prefix and a number
+        (JHP1, JHP2 …).</p>
+      <p id="storage-info" class="muted small"></p>
+      <p id="app-version" class="muted small"></p>
+    </div>
+  </main>
+</section>
+
+<!-- Map of one project (or of the master register, view only) -->
+<section id="survey" class="screen" hidden>
+  <header class="bar">
+    <button class="icon-btn" id="btn-home" title="Projects" aria-label="Projects">&#8592;</button>
+    <div class="bar-title">
+      <h1 id="project-title"></h1>
+      <div id="progress" class="small"></div>
+    </div>
+    <button class="btn" id="btn-list">Points</button>
+    <button class="btn" id="btn-locate" title="Show my position">Locate</button>
+    <button class="btn primary" id="btn-export">Export</button>
+  </header>
+  <div class="map-wrap">
+    <canvas id="map"></canvas>
+    <div class="map-tools">
+      <button class="tool-btn" id="btn-layers" aria-label="Map settings">Map</button>
+      <button class="tool-btn primary" id="btn-add" aria-label="New control point">+ Point</button>
+      <button class="icon-btn round" id="zoom-in" aria-label="Zoom in">+</button>
+      <button class="icon-btn round" id="zoom-out" aria-label="Zoom out">&minus;</button>
+      <button class="icon-btn round" id="zoom-fit" aria-label="Show all points">&#9635;</button>
+    </div>
+    <div class="legend small">
+      <span><i class="sym rd"></i>RD</span>
+      <span><i class="sym t"></i>T</span>
+      <span><i class="sym p"></i>Personal</span>
+      <span><i class="sym approx"></i>Approx. only</span>
+    </div>
+    <div id="place-bar" class="place-bar" hidden>
+      <span id="place-text">Tap the map where the point is</span>
+      <button class="btn small" id="place-cancel" type="button">Cancel</button>
+      <button class="btn small primary" id="place-done" type="button" disabled>Use this position</button>
+    </div>
+    <div id="nav-bar" class="nav-bar" hidden>
+      <span id="nav-arrow" class="nav-arrow" aria-hidden="true">&#8593;</span>
+      <span id="nav-text"></span>
+      <button id="nav-clear" class="icon-btn" type="button" aria-label="Stop navigation">&times;</button>
+    </div>
+    <div id="coord" class="coord small"></div>
+    <div id="layers-panel" class="layers-panel" hidden>
+      <label class="check lp-head" id="drawing-row"><input type="checkbox" id="dw-on"> <b>Project drawing</b></label>
+      <label class="check lp-head"><input type="checkbox" id="bm-on"> <b>OneMap base map</b></label>
+      <div class="filters" id="bm-styles">
+        <button class="chip" data-style="Default">Colour</button>
+        <button class="chip" data-style="Grey">Grey</button>
+        <button class="chip" data-style="Night">Night</button>
+        <button class="chip" data-style="Original">Original</button>
+        <button class="chip" data-style="LandLot">Land lots</button>
+      </div>
+      <label class="slider">Opacity <input type="range" id="bm-opacity" min="0.1" max="1" step="0.05"></label>
+      <label class="slider">Contrast <input type="range" id="bm-contrast" min="0.3" max="1.8" step="0.05"></label>
+      <label class="slider">Brightness <input type="range" id="bm-bright" min="0.5" max="1.5" step="0.05"></label>
+      <p class="muted small">OneMap needs an internet connection; its tiles are not stored on the phone. The base
+        map can be a metre or two off the survey coordinates.</p>
+    </div>
+    <div id="onemap-attr" class="attr" hidden>
+      <img src="https://www.onemap.gov.sg/web-assets/images/logo/om_logo.png" alt="" width="20" height="20">
+      <a href="https://www.onemap.gov.sg/" target="_blank" rel="noopener noreferrer">OneMap</a>&nbsp;&copy;&nbsp;contributors
+      &#124; <a href="https://www.sla.gov.sg/" target="_blank" rel="noopener noreferrer">Singapore Land Authority</a>
+    </div>
+  </div>
+
+  <!-- Point list -->
+  <aside id="list-panel" class="panel left" hidden>
+    <div class="panel-head">
+      <input id="point-search" class="input" placeholder="Find point number" inputmode="search" autocapitalize="characters">
+      <button class="icon-btn" data-close="list-panel" aria-label="Close">&times;</button>
+    </div>
+    <div class="filters" id="list-filters">
+      <button class="chip on" data-filter="all">All</button>
+      <button class="chip" data-filter="RD">RD</button>
+      <button class="chip" data-filter="T">T</button>
+      <button class="chip" data-filter="P">Personal</button>
+      <button class="chip" data-filter="nopos">No position</button>
+    </div>
+    <div class="filters" id="project-filter-row" hidden>
+      <select id="project-filter" class="input"></select>
+    </div>
+    <ul id="point-list" class="point-list"></ul>
+  </aside>
+
+  <!-- One point -->
+  <aside id="point-panel" class="panel right" hidden>
+    <div class="panel-head">
+      <div>
+        <h2 id="pt-title"></h2>
+        <div id="pt-sub" class="muted small"></div>
+      </div>
+      <span id="pt-status-chip" class="status-chip"></span>
+      <button class="icon-btn" id="pt-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="form-body">
+      <div id="pt-readonly" class="note small" hidden>Master register: view only. Open the point's project to
+        change it.</div>
+
+      <section class="group">
+        <h3>Surveyed coordinates</h3>
+        <div id="pt-survey" class="kv"></div>
+      </section>
+
+      <section class="group">
+        <h3>Approximate position</h3>
+        <div id="pt-approx" class="kv"></div>
+        <div class="btn-row" id="pt-pos-btns">
+          <button class="btn small" id="pt-gps" type="button">Use GPS here</button>
+          <button class="btn small" id="pt-tap" type="button">Tap on map</button>
+          <button class="btn small" id="pt-nav" type="button">Navigate here</button>
+        </div>
+        <p id="pt-gps-msg" class="muted small"></p>
+      </section>
+
+      <section class="group">
+        <h3>Photos</h3>
+        <div id="pt-photos" class="photos"></div>
+        <input type="file" id="photo-camera" accept="image/*" capture="environment" hidden>
+        <input type="file" id="photo-gallery" accept="image/*" hidden>
+      </section>
+
+      <section class="group">
+        <h3>Details</h3>
+        <label class="field">Marker
+          <select id="pt-marker" class="input">
+            <option value=""></option>
+            <option>Steel nail</option>
+            <option>Concrete pin</option>
+            <option>Survey peg</option>
+            <option>Steel bolt</option>
+            <option>Reflective target</option>
+            <option>Prism</option>
+            <option>Paint mark</option>
+            <option>Other</option>
+          </select>
+        </label>
+        <label class="field">Location description
+          <textarea id="pt-description" class="input" rows="3" placeholder="Where it is, how to find it"></textarea>
+        </label>
+        <label class="field">Remarks <textarea id="pt-remarks" class="input" rows="2"></textarea></label>
+        <label class="field">Status
+          <div class="seg seg4" id="pt-status">
+            <button type="button" data-status="ok">OK</button>
+            <button type="button" data-status="disturbed">Disturbed</button>
+            <button type="button" data-status="destroyed">Destroyed</button>
+            <button type="button" data-status="void">Void</button>
+          </div>
+        </label>
+        <p class="muted small">The number stays used whatever the status: a destroyed or void point keeps it.</p>
+      </section>
+    </div>
+  </aside>
+</section>
+
+<!-- New point -->
+<dialog id="new-dialog">
+  <form method="dialog" id="new-form">
+    <h2>New control point</h2>
+    <div class="seg seg3" id="new-type">
+      <button type="button" data-type="RD">RD</button>
+      <button type="button" data-type="T">T</button>
+      <button type="button" data-type="P">Personal</button>
+    </div>
+    <label class="field">Point number
+      <input id="new-no" class="input big" autocapitalize="characters" autocomplete="off" spellcheck="false">
+    </label>
+    <p id="new-msg" class="small"></p>
+    <p id="new-info" class="muted small"></p>
+    <div class="dialog-foot">
+      <button class="btn" value="cancel" formnovalidate>Cancel</button>
+      <button class="btn primary" id="new-ok" value="ok">Save number</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Export -->
+<dialog id="export-dialog">
+  <form method="dialog">
+    <h2>Export to the office</h2>
+    <label class="check"><input type="radio" name="exp-mode" value="changed" checked> <span id="exp-changed"></span></label>
+    <label class="check"><input type="radio" name="exp-mode" value="all"> <span id="exp-all"></span></label>
+    <p class="muted small">A zip with the points and photos. Send it to the office (WhatsApp, Gmail, Drive).
+      Export at the end of each day: until then this phone has the only copy.</p>
+    <p id="exp-status" class="small"></p>
+    <div class="dialog-foot">
+      <button class="btn" value="cancel">Close</button>
+      <button class="btn primary" id="exp-go" type="button">Export</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Photo viewer -->
+<dialog id="photo-dialog" class="photo-dialog">
+  <form method="dialog">
+    <img id="photo-big" alt="">
+    <p id="photo-cap" class="muted small"></p>
+    <div class="dialog-foot">
+      <button class="btn danger" id="photo-remove" type="button">Remove</button>
+      <button class="btn" value="close">Close</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Confirm -->
+<dialog id="confirm-dialog">
+  <form method="dialog">
+    <p id="confirm-text"></p>
+    <div class="dialog-foot">
+      <button class="btn" value="no">Cancel</button>
+      <button class="btn primary" value="yes" id="confirm-yes">OK</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" hidden></div>
+</body>
+</html>
