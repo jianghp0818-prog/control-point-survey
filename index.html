@@ -81,15 +81,11 @@
       <h1 id="project-title"></h1>
       <div id="progress" class="small"></div>
     </div>
-    <button class="btn" id="btn-list">Points</button>
-    <button class="btn" id="btn-locate" title="Show my position">Locate</button>
-    <button class="btn primary" id="btn-export">Export</button>
   </header>
   <div class="map-wrap">
     <canvas id="map"></canvas>
     <div class="map-tools">
       <button class="tool-btn" id="btn-layers" aria-label="Map settings">Map</button>
-      <button class="tool-btn primary" id="btn-add" aria-label="New control point">+ Point</button>
       <button class="icon-btn round" id="zoom-in" aria-label="Zoom in">+</button>
       <button class="icon-btn round" id="zoom-out" aria-label="Zoom out">&minus;</button>
       <button class="icon-btn round" id="zoom-fit" aria-label="Show all points">&#9635;</button>
@@ -134,8 +130,22 @@
     </div>
   </div>
 
+  <!-- Bottom bar: within reach of the thumb -->
+  <nav class="bottom-nav" id="bottom-nav">
+    <button type="button" id="nav-home"><span class="ni"><svg viewBox="0 0 24 24"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h5v-6h4v6h5V10"/></svg></span><span>Projects</span></button>
+    <button type="button" id="btn-list"><span class="ni"><svg viewBox="0 0 24 24"><path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4" cy="6" r="1.3"/><circle cx="4" cy="12" r="1.3"/><circle cx="4" cy="18" r="1.3"/></svg></span><span>Points</span></button>
+    <button type="button" id="btn-add" class="primary"><span class="ni"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span>Point</span></button>
+    <button type="button" id="btn-locate"><span class="ni"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></span><span>Locate</span></button>
+    <button type="button" id="btn-export"><span class="ni"><svg viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M4 14v6h16v-6"/></svg></span><span>Export</span></button>
+  </nav>
+
   <!-- Point list -->
   <aside id="list-panel" class="panel left" hidden>
+    <div class="filters" id="project-filter-row">
+      <label class="field project-pick">Project
+        <select id="project-filter" class="input"></select>
+      </label>
+    </div>
     <div class="panel-head">
       <input id="point-search" class="input" placeholder="Find point number" inputmode="search" autocapitalize="characters">
       <button class="icon-btn" data-close="list-panel" aria-label="Close">&times;</button>
@@ -147,9 +157,6 @@
       <button class="chip" data-filter="P">Personal</button>
       <button class="chip" data-filter="nopos">No position</button>
     </div>
-    <div class="filters" id="project-filter-row" hidden>
-      <select id="project-filter" class="input"></select>
-    </div>
     <ul id="point-list" class="point-list"></ul>
   </aside>
 
@@ -157,11 +164,10 @@
   <aside id="point-panel" class="panel right" hidden>
     <div class="panel-head">
       <div>
-        <h2 id="pt-title"></h2>
+        <h2><span id="pt-title"></span> <span id="pt-status-text" class="status-text" hidden></span></h2>
         <div id="pt-sub" class="muted small"></div>
       </div>
-      <span id="pt-status-chip" class="status-chip"></span>
-      <button class="icon-btn" id="pt-close" aria-label="Close">&times;</button>
+      <button class="icon-btn" id="pt-close" aria-label="Back to the map">&times;</button>
     </div>
     <div class="form-body">
       <div id="pt-readonly" class="note small" hidden>Master register: view only. Open the point's project to
@@ -219,6 +225,10 @@
         </label>
         <p class="muted small">The number stays used whatever the status: a destroyed or void point keeps it.</p>
       </section>
+    </div>
+    <div class="form-foot">
+      <button class="btn" id="pt-next" type="button">+ Next point</button>
+      <button class="btn primary" id="pt-done" type="button">Done</button>
     </div>
   </aside>
 </section>

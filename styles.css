@@ -156,7 +156,7 @@ textarea.input { resize: vertical; }
   position: fixed; top: var(--bar-h, 56px); bottom: 0; z-index: 10;
   background: var(--card); box-shadow: 0 0 18px rgba(0,0,0,.18); display: flex; flex-direction: column;
 }
-.panel.left { left: 0; width: min(340px, 100%); }
+.panel.left { left: 0; width: min(340px, 100%); bottom: var(--nav-h, 0px); }
 .panel.right { right: 0; width: min(440px, 100%); }
 .panel-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
 .panel-head > div:first-child { flex: 1; min-width: 0; }
@@ -169,6 +169,38 @@ textarea.input { resize: vertical; }
 .point-list li:active { background: #eef3f8; }
 .point-list .pno { font-weight: 700; min-width: 92px; display: inline-flex; align-items: center; gap: 7px; }
 .point-list .pinfo { flex: 1; min-width: 0; color: var(--muted); font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* bottom bar of the map screen */
+.bottom-nav {
+  flex: none; display: grid; grid-template-columns: repeat(5, 1fr); align-items: end;
+  background: var(--card); border-top: 1px solid var(--line);
+  padding: 4px 4px calc(env(safe-area-inset-bottom) + 4px); z-index: 4;
+}
+.bottom-nav button {
+  display: grid; justify-items: center; gap: 1px; min-height: 52px; padding: 4px 2px; border: 0; background: none;
+  font: inherit; font-size: .75rem; font-weight: 600; color: var(--muted); cursor: pointer; border-radius: 10px;
+}
+.bottom-nav .ni { display: grid; place-items: center; height: 26px; color: var(--navy); }
+.bottom-nav svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round;
+  stroke-linejoin: round; }
+.bottom-nav button.on .ni { color: var(--blue); }
+.bottom-nav button.primary svg { width: 28px; height: 28px; stroke-width: 2.6; }
+.bottom-nav button:active { background: #eef3f8; }
+.bottom-nav button.on { color: var(--blue); background: #e7f0fb; }
+.bottom-nav button.primary { color: var(--blue); }
+.bottom-nav button.primary .ni {
+  width: 46px; height: 46px; margin-top: -18px; border-radius: 50%; background: var(--blue); color: #fff;
+  display: grid; place-items: center; font-size: 1.8rem; box-shadow: 0 2px 8px rgba(24,100,171,.45);
+}
+.form-foot {
+  flex: none; display: flex; gap: 8px; padding: 10px 12px calc(env(safe-area-inset-bottom) + 10px);
+  border-top: 1px solid var(--line); background: var(--card);
+}
+.form-foot .btn { flex: 1; min-height: 48px; font-size: 1rem; }
+.status-text { font-size: .8rem; font-weight: 700; padding: 2px 8px; border-radius: 6px; vertical-align: middle;
+  background: #fff4d6; color: #7a5200; }
+.status-text.destroyed, .status-text.void { background: #e9ecef; color: #495057; }
+.project-pick { width: 100%; }
 
 .status-chip { font-size: .8rem; font-weight: 700; padding: 4px 10px; border-radius: 12px; color: #fff; white-space: nowrap; background: var(--p); }
 .status-chip.disturbed { background: #f2b100; color: #3a2c00; }
@@ -218,7 +250,7 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
 .photo-dialog { width: min(900px, calc(100% - 16px)); }
 .photo-dialog img { width: 100%; max-height: 75vh; object-fit: contain; background: #111; border-radius: 8px; }
 .toast {
-  position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 24px); transform: translateX(-50%); z-index: 50;
+  position: fixed; left: 50%; bottom: calc(var(--nav-h, 0px) + 16px); transform: translateX(-50%); z-index: 50;
   background: var(--ink); color: #fff; padding: 10px 16px; border-radius: 10px; max-width: calc(100% - 32px);
   box-shadow: 0 6px 18px rgba(0,0,0,.3);
 }

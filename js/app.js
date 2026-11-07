@@ -11,7 +11,7 @@ import { TYPE_LABELS, checkNumber, checkPrefix, checkProjectCode, naturalCompare
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
-const APP_VERSION = "0.1.0";     // change with CACHE in sw.js
+const APP_VERSION = "0.1.1";     // change with CACHE in sw.js
 const SVY21 = "+proj=tmerc +lat_0=1.366666666666667 +lon_0=103.8333333333333 +k=1 +x_0=28001.642 +y_0=38744.572 " +
   "+ellps=WGS84 +units=m +no_defs";
 const DEFAULT_ORIGIN = [28000, 38000];                           // SVY21, near the false origin
@@ -323,7 +323,8 @@ function showProject(project, points) {
   $("#project-title").textContent = `${project.code}${project.name ? " – " + project.name : ""}`;
   $("#btn-add").hidden = state.readonly;
   $("#btn-export").hidden = state.readonly;
-  $("#project-filter-row").hidden = true;
+  fillProjectPicker();
+  layoutVars();
   $("#drawing-row").hidden = !project.background;
   map.setBackground(project.background);
   map.setGeo(makeGeo(origin()));
@@ -365,6 +366,7 @@ async function openMaster(pack = null) {
     codes.map((c) => `<option value="${esc(c)}">${esc(c)}${esc(master.projects.find((p) => p.code === c)?.name ? " – " + master.projects.find((p) => p.code === c).name : "")}</option>`).join("");
   sel.value = state.projectFilter = "";
   $("#project-filter-row").hidden = false;
+  layoutVars();
   map.setBackground(null);
   map.setGeo(makeGeo(origin()));
   applyBasemap({ on: true });
@@ -372,6 +374,28 @@ async function openMaster(pack = null) {
   refreshPoints();
   fitAll();
   if (!pack) history.replaceState(null, "", "#master");
+}
+
+// In a project: the projects on this phone, to switch without going back to the home screen. In the master
+// register: a filter (filled by openMaster).
+async function fillProjectPicker() {
+  const sel = $("#project-filter");
+  if (state.view !== "project" || state.readonly) {
+    $("#project-filter-row").hidden = state.view !== "master";
+    return;
+  }
+  const projects = (await db.listProjects()).sort((a, b) => naturalCompare(a.code, b.code));
+  sel.innerHTML = projects.map((p) => `<option value="${esc(p.code)}">${esc(p.code)}${p.name ? " – " + esc(p.name) : ""}</option>`).join("");
+  sel.value = state.project.code;
+  $("#project-filter-row").hidden = false;
+}
+
+// The panels sit between the top bar and the bottom bar, whose heights depend on the phone (notch, home bar).
+function layoutVars() {
+  const head = $("#survey > header"), nav = $("#bottom-nav");
+  const root = document.documentElement.style;
+  if (head?.offsetHeight) root.setProperty("--bar-h", `${head.offsetHeight}px`);
+  if (nav?.offsetHeight) root.setProperty("--nav-h", `${nav.offsetHeight}px`);
 }
 
 function masterOrigin(master) {
@@ -388,6 +412,7 @@ function goHome() {
   state.readonly = false;
   $("#survey").hidden = true;
   $("#home").hidden = false;
+  document.documentElement.style.setProperty("--nav-h", "0px");
   history.replaceState(null, "", "#");
   renderHome();
 }
@@ -487,9 +512,12 @@ function showPanel() {
   $("#pt-title").textContent = p.no;
   $("#pt-sub").textContent = `${TYPE_LABELS[p.type]} · ${state.view === "master" ? p.project + " · " : ""}set ${p.date || "?"}` +
     `${p.surveyor ? " by " + p.surveyor : ""}`;
-  const chip = $("#pt-status-chip");
-  chip.textContent = STATUS_LABELS[p.status] || p.status;
-  chip.className = `status-chip ${p.status}`;
+  const st = $("#pt-status-text");                          // shown only when not OK; changed under Status below
+  st.hidden = p.status === "ok";
+  st.textContent = STATUS_LABELS[p.status] || p.status;
+  st.className = `status-text ${p.status}`;
+  $("#pt-next").hidden = ro || state.view !== "project";
+  $("#pt-done").textContent = ro ? "Close" : "Done";
   $("#pt-readonly").hidden = !(ro && state.view === "master");
   const pos = positionOf(p);
   $("#pt-gps").hidden = $("#pt-tap").hidden = ro;
@@ -642,16 +670,18 @@ function startPlacing() {
   }
 }
 
-function finishPlacing(use) {
+async function finishPlacing(use) {
   const key = state.placeFor;
   const pin = state.pin;
   setMode(null);
   const rec = state.points.get(key);
-  if (rec && use && pin) {
+  if (!rec) return;
+  state.current = rec;
+  if (use && pin) {
     const { e, n } = toEN(...pin);
-    savePoint(rec, { approx: { e: round(e, 3), n: round(n, 3), source: "map", acc: null, time: new Date().toISOString() } });
+    await savePoint(rec, { approx: { e: round(e, 3), n: round(n, 3), source: "map", acc: null, time: new Date().toISOString() } });
   }
-  if (rec) selectPoint(key);
+  selectPoint(key);
 }
 
 function onMapTap({ item, world }) {
@@ -739,39 +769,43 @@ function updateNav() {
 }
 
 // ---------------------------------------------------------------- photos
+// The panel is redrawn after every save, and two redraws can overlap (e.g. a new position saved while the panel
+// opens again). The photos are read first and only the latest redraw puts them on the screen, so a photo is never
+// shown twice.
 async function renderPhotos() {
-  for (const url of state.thumbUrls) URL.revokeObjectURL(url);
-  state.thumbUrls = [];
+  const gen = (state.photoGen = (state.photoGen || 0) + 1);
   const rec = state.current;
-  const box = $("#pt-photos");
-  box.innerHTML = "";
+  if (!rec) return;
   const extras = rec.photos.filter((ph) => ph.kind === "extra");
   const slots = [...PHOTO_SLOTS.map(([kind, label, hint]) => ({ kind, label, hint, photo: rec.photos.find((ph) => ph.kind === kind) })),
     ...extras.map((ph, i) => ({ kind: "extra", label: `Photo ${i + 3}`, hint: "", photo: ph }))];
   if (!state.readonly && extras.length < MAX_EXTRA_PHOTOS) slots.push({ kind: "extra", label: "+ Photo", hint: "more", photo: null });
-  for (const slot of slots) {
-    if (state.readonly && !slot.photo) continue;
+  const blobs = await Promise.all(slots.map((s) => (s.photo ? db.getPhoto(s.photo.id) : null)));
+  if (gen !== state.photoGen) return;                      // a newer redraw has started
+  for (const url of state.thumbUrls) URL.revokeObjectURL(url);
+  state.thumbUrls = [];
+  const box = $("#pt-photos");
+  box.innerHTML = "";
+  slots.forEach((slot, i) => {
+    if (state.readonly && !slot.photo) return;
     const div = document.createElement("div");
     div.className = "photo-slot";
     div.innerHTML = `<div class="thumb${slot.photo ? " has" : ""}"><img alt=""><span class="thumb-label">${esc(slot.label)}
       ${slot.hint ? `<small>${esc(slot.hint)}</small>` : ""}${slot.photo?.office ? "<small>(office copy)</small>" : ""}</span></div>
       ${!slot.photo && !state.readonly ? `<button class="btn small" type="button">Gallery</button>` : ""}`;
     const thumb = div.querySelector(".thumb");
-    if (slot.photo) {
-      const photo = await db.getPhoto(slot.photo.id);
-      if (photo) {
-        const url = URL.createObjectURL(photo.blob);
-        state.thumbUrls.push(url);
-        div.querySelector("img").src = url;
-        thumb.onclick = () => viewPhoto(slot.photo, url, slot.label);
-      }
-    } else if (!state.readonly) {
+    if (slot.photo && blobs[i]) {
+      const url = URL.createObjectURL(blobs[i].blob);
+      state.thumbUrls.push(url);
+      div.querySelector("img").src = url;
+      thumb.onclick = () => viewPhoto(slot.photo, url, slot.label);
+    } else if (!slot.photo && !state.readonly) {
       thumb.onclick = () => pickPhoto(slot.kind, "camera");
       div.querySelector("button").onclick = () => pickPhoto(slot.kind, "gallery");
     }
     box.appendChild(div);
-  }
-  if (!slots.length || (state.readonly && !rec.photos.length)) box.innerHTML = `<p class="muted small">No photos on this device.</p>`;
+  });
+  if (!box.children.length) box.innerHTML = `<p class="muted small">No photos on this device.</p>`;
 }
 
 function pickPhoto(kind, source) {
@@ -994,11 +1028,31 @@ function bind() {
     $$("#list-filters .chip").forEach((x) => x.classList.toggle("on", x === c));
     renderList();
   }));
-  $("#project-filter").addEventListener("change", (e) => {
-    state.projectFilter = e.target.value;
+  $("#project-filter").addEventListener("change", async (e) => {
+    if (state.view === "project") {                  // switch to another project on this phone
+      await openProject(e.target.value);
+      $("#list-panel").hidden = false;
+      renderList();
+      return;
+    }
+    state.projectFilter = e.target.value;            // master register: only this project's points
     refreshPoints();
     fitAll();
+    renderList();
   });
+  $("#nav-home").onclick = goHome;
+  new MutationObserver(() => $("#btn-list").classList.toggle("on", !$("#list-panel").hidden))
+    .observe($("#list-panel"), { attributes: true, attributeFilter: ["hidden"] });
+  $("#pt-done").onclick = () => {
+    const rec = state.current;
+    closePanels();
+    if (rec && !state.readonly) toast(`${rec.no} saved.`);
+  };
+  $("#pt-next").onclick = () => {
+    closePanels();
+    openNewDialog();
+  };
+  window.addEventListener("resize", layoutVars);
 
   // new point
   $$("#new-type button").forEach((b) => (b.onclick = () => setNewType(b.dataset.type)));
