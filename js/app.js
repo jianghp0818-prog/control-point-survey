@@ -12,7 +12,7 @@ import { TYPE_LABELS, checkNumber, checkPrefix, checkProjectCode, naturalCompare
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
-const APP_VERSION = "0.2.0";     // change with CACHE in sw.js
+const APP_VERSION = "0.2.1";     // change with CACHE in sw.js
 const SVY21 = "+proj=tmerc +lat_0=1.366666666666667 +lon_0=103.8333333333333 +k=1 +x_0=28001.642 +y_0=38744.572 " +
   "+ellps=WGS84 +units=m +no_defs";
 const DEFAULT_ORIGIN = [28000, 38000];                           // SVY21, near the false origin
@@ -434,14 +434,15 @@ function officePoint(op, code) {
   };
 }
 
-async function addOfficePhotos(rec, op, pack) {
+// store: false keeps the photos in memory only (a pack opened to look at, e.g. the office map view)
+async function addOfficePhotos(rec, op, pack, store = true) {
   for (const ph of op.photos || []) {
     const data = ph.thumb && pack.photos?.[ph.thumb];
     if (!data) continue;
     const id = `${rec.project}|${rec.no}|office|${ph.thumb}`;
-    await db.putPhoto({ id, project: rec.project, no: rec.no, kind: ph.kind, blob: photoBlob(data), taken: ph.taken,
-      office: true });
-    rec.photos.push({ id, kind: ph.kind, taken: ph.taken, office: true });
+    const blob = photoBlob(data);
+    if (store) await db.putPhoto({ id, project: rec.project, no: rec.no, kind: ph.kind, blob, taken: ph.taken, office: true });
+    rec.photos.push({ id, kind: ph.kind, taken: ph.taken, office: true, ...(store ? {} : { blob }) });
   }
 }
 
@@ -472,7 +473,12 @@ async function loadPack(pack, { save }) {
   };
   if (!save) {                                              // look only (office map view): nothing is stored
     state.readonly = true;
-    const points = new Map(pack.control.map((op) => [normalize(op.no), officePoint(op, code)]));
+    const points = new Map();
+    for (const op of pack.control) {
+      const rec = officePoint(op, code);
+      await addOfficePhotos(rec, op, pack, false);
+      points.set(rec.no, rec);
+    }
     showProject(project, points);
     return;
   }
@@ -1004,7 +1010,7 @@ async function renderPhotos() {
   const slots = [...PHOTO_SLOTS.map(([kind, label, hint]) => ({ kind, label, hint, photo: rec.photos.find((ph) => ph.kind === kind) })),
     ...extras.map((ph, i) => ({ kind: "extra", label: `Photo ${i + 3}`, hint: "", photo: ph }))];
   if (!state.readonly && extras.length < MAX_EXTRA_PHOTOS) slots.push({ kind: "extra", label: "+ Photo", hint: "more", photo: null });
-  const blobs = await Promise.all(slots.map((s) => (s.photo ? db.getPhoto(s.photo.id) : null)));
+  const blobs = await Promise.all(slots.map((s) => (s.photo ? (s.photo.blob ? s.photo : db.getPhoto(s.photo.id)) : null)));
   if (gen !== state.photoGen) return;                      // a newer redraw has started
   for (const url of state.thumbUrls) URL.revokeObjectURL(url);
   state.thumbUrls = [];
