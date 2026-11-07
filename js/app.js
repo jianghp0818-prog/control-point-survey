@@ -11,7 +11,7 @@ import { TYPE_LABELS, checkNumber, checkPrefix, checkProjectCode, naturalCompare
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
-const APP_VERSION = "0.1.1";     // change with CACHE in sw.js
+const APP_VERSION = "0.1.2";     // change with CACHE in sw.js
 const SVY21 = "+proj=tmerc +lat_0=1.366666666666667 +lon_0=103.8333333333333 +k=1 +x_0=28001.642 +y_0=38744.572 " +
   "+ellps=WGS84 +units=m +no_defs";
 const DEFAULT_ORIGIN = [28000, 38000];                           // SVY21, near the false origin
@@ -129,55 +129,105 @@ async function refreshKeys() {
 }
 
 // ---------------------------------------------------------------- home
+// The project used last is shown first; the others are folded under "All projects (n)".
 async function renderHome() {
-  const projects = (await db.listProjects()).sort((a, b) => naturalCompare(a.code, b.code));
+  const projects = (await db.listProjects())
+    .sort((a, b) => (b.lastOpened || b.created || "").localeCompare(a.lastOpened || a.created || ""));
   const list = $("#project-list");
   list.innerHTML = "";
   $("#no-projects").hidden = projects.length > 0;
   const notExported = [];
-  for (const pr of projects) {
+  let total = 0;
+  for (const [i, pr] of projects.entries()) {
     const points = await db.getPoints(pr.code);
+    total += points.length;
     const pending = points.filter((p) => p.updated !== p.exported).length;
     if (pending) notExported.push(`${pr.code}: ${pending}`);
     const li = document.createElement("li");
+    li.hidden = i > 0 && !state.showAllProjects;
     const counts = ["RD", "T", "P"].map((t) => `${points.filter((p) => p.type === t).length} ${t === "P" ? "personal" : t}`);
     li.innerHTML = `<div class="project-main"><div class="project-name">${esc(pr.code)}${pr.name ? " – " + esc(pr.name) : ""}</div>
       <div class="muted small">${counts.join(" · ")}${pr.packCreated ? ` · pack ${esc(pr.packCreated.slice(0, 10))}` : " · no pack yet"}
       ${pending ? ` · <b class="warn-text">${pending} not exported</b>` : ""}</div></div>
       <button class="btn small ghost" data-remove="${esc(pr.code)}">Remove</button>`;
     li.querySelector(".project-main").onclick = () => openProject(pr.code);
-    li.querySelector("[data-remove]").onclick = () => removeProject(pr.code, pending);
+    li.querySelector("[data-remove]").onclick = () => removeProject(pr.code);
     list.appendChild(li);
   }
+  $("#projects-title").textContent = projects.length > 1 && !state.showAllProjects ? "Last project" : "Projects on this phone";
+  const more = $("#more-projects");
+  more.hidden = projects.length < 2;
+  more.textContent = state.showAllProjects ? "Show only the last project" : `All projects (${projects.length}) ▾`;
   const note = $("#backup-note");
   note.hidden = notExported.length === 0;
   note.textContent = `Not exported yet (${notExported.join(", ")}). Export at the end of each day: until then this ` +
     "phone has the only copy.";
   $("#setup-note").hidden = Boolean(state.surveyor && !checkPrefix(state.prefix));
-  $("#master-card").hidden = !state.master;
-  if (state.master) {
-    $("#master-info").textContent = `${state.master.control.length} control points in ${state.master.projects.length} ` +
-      `projects, made ${state.master.created.slice(0, 10)}.`;
-  }
+  $("#all-card").hidden = !total && !state.master;
+  $("#all-info").textContent = `${total} control points in ${projects.length} project(s) on this phone` +
+    (state.master ? `; office master register of ${state.master.created.slice(0, 10)}: ` +
+      `${state.master.control.length} points in ${state.master.projects.length} projects.` : ".");
+  renderRetired();
   if (navigator.storage?.estimate) {
     const { usage, quota } = await navigator.storage.estimate();
     $("#storage-info").textContent = `Storage used: ${(usage / 1e6).toFixed(1)} MB of ${(quota / 1e6).toFixed(0)} MB`;
   }
 }
 
-async function removeProject(code, pending) {
-  const text = pending
-    ? `${code} has ${pending} point(s) not exported. Removing it deletes them from this phone for good. Remove ${code}?`
-    : `Remove ${code} and its photos from this phone? Its numbers stay used.`;
-  if (!(await confirmBox(text, "Remove"))) return;
+// Removing a project: its numbers normally stay used (the marks are on site). For test data the numbers can be
+// freed, except those the office already has (exported, or from a project pack), which always stay used.
+async function removeProject(code) {
   const points = await db.getPoints(code);
   const project = await db.getProject(code);
-  state.retired[code] = [...new Set([...(state.retired[code] || []), ...points.map((p) => p.no),
-    ...(project?.officeUsed || [])])];
+  const pending = points.filter((p) => p.updated !== p.exported).length;
+  const office = new Set([...(project?.officeUsed || []), ...points.filter((p) => p.exported || p.origin === "office").map((p) => p.no)]);
+  const free = points.map((p) => p.no).filter((n) => !office.has(n)).sort(naturalCompare);
+  const dlg = $("#remove-dialog");
+  $("#rm-title").textContent = `Remove ${code}?`;
+  $("#rm-text").textContent = (pending ? `${pending} point(s) of ${code} are not exported: removing deletes them from this phone for good. ` : "") +
+    "Real control points: keep their numbers used. Test only: free the numbers so they can be given again" +
+    (free.length ? ` (${free.slice(0, 12).join(", ")}${free.length > 12 ? " …" : ""})` : "") +
+    (office.size ? `; ${office.size} number(s) the office already has stay used.` : ".");
+  $("#rm-free").disabled = !free.length;
+  dlg.returnValue = "";
+  dlg.showModal();
+  const choice = await new Promise((resolve) => dlg.addEventListener("close", () => resolve(dlg.returnValue), { once: true }));
+  if (choice !== "keep" && choice !== "free") return;
+  const keep = choice === "keep" ? [...points.map((p) => p.no), ...office] : [...office];
+  const retired = new Set([...(state.retired[code] || []), ...keep]);
+  if (retired.size) state.retired[code] = [...retired].sort(naturalCompare);
+  else delete state.retired[code];
   await db.setSetting("retired", state.retired);
   await db.deleteProject(code);
   await refreshKeys();
+  toast(choice === "free" ? `${code} removed; ${free.length} number(s) can be given again.` : `${code} removed; its numbers stay used.`, 5000);
   renderHome();
+}
+
+// Numbers of projects removed earlier: listed so test numbers can still be freed.
+function renderRetired() {
+  const list = $("#retired-list");
+  list.innerHTML = "";
+  const codes = Object.keys(state.retired).filter((c) => state.retired[c]?.length).sort(naturalCompare);
+  $("#retired-card").hidden = !codes.length;
+  for (const code of codes) {
+    const nums = state.retired[code];
+    const li = document.createElement("li");
+    li.innerHTML = `<div class="project-main"><div class="project-name">${esc(code)}</div>
+      <div class="muted small">${esc(nums.slice(0, 15).join(", "))}${nums.length > 15 ? ` … (${nums.length})` : ""}</div></div>
+      <button class="btn small danger">Free</button>`;
+    li.querySelector("button").onclick = async () => {
+      const ok = await confirmBox(`Free the numbers of removed project ${code} (${nums.join(", ")})? Only do this if they ` +
+        "were test points never sent to the office: they will be given again. Numbers the office has in a project pack " +
+        "stay used.", "Free numbers");
+      if (!ok) return;
+      delete state.retired[code];
+      await db.setSetting("retired", state.retired);
+      toast(`Numbers of ${code} freed.`);
+      renderHome();
+    };
+    list.appendChild(li);
+  }
 }
 
 async function newProject() {
@@ -308,6 +358,8 @@ async function openProject(code) {
   const project = await db.getProject(code);
   if (!project) return;
   state.readonly = false;
+  project.lastOpened = new Date().toISOString();       // the home screen shows the last project first
+  await db.putProject(project);
   const points = new Map((await db.getPoints(code)).map((p) => [p.no, p]));
   showProject(project, points);
   history.replaceState(null, "", `#project=${encodeURIComponent(code)}`);
@@ -335,16 +387,20 @@ function showProject(project, points) {
   fitAll();
 }
 
-async function openMaster(pack = null) {
-  const master = pack || state.master;
-  if (!master) return;
+// All projects (view only): every project on this phone, plus the office's master register when it has been
+// opened. A pack opened only to look at (office map view) shows just that pack.
+async function openMaster(pack = null, filter = "") {
+  const master = pack || state.master || { control: [], projects: [], used_rd: [] };
   state.view = "master";
   state.readonly = true;
-  state.project = { code: MASTER, name: "Master register", origin: masterOrigin(master) };
+  const names = new Map((master.projects || []).map((p) => [p.code, p.name]));
   const points = new Map();
   for (const p of master.control) points.set(`${p.project}|${p.no}`, officePoint(p, p.project));
-  if (!pack) {                       // points recorded on this phone since the master was made are shown too
+  state.localCodes = new Set();
+  if (!pack) {                       // points recorded on this phone (newer than the master register) are shown too
     for (const pr of await db.listProjects()) {
+      state.localCodes.add(pr.code);
+      if (!names.get(pr.code)) names.set(pr.code, pr.name || "");
       for (const p of await db.getPoints(pr.code)) {
         const key = `${p.project}|${p.no}`;
         const office = points.get(key);
@@ -352,19 +408,20 @@ async function openMaster(pack = null) {
       }
     }
   }
+  state.project = { code: MASTER, name: "All projects", origin: masterOrigin([...points.values()]) };
   state.points = points;
   state.current = null;
   $("#home").hidden = true;
   $("#survey").hidden = false;
-  $("#project-title").textContent = "Master register";
+  $("#project-title").textContent = "All projects (view only)";
   $("#btn-add").hidden = true;
   $("#btn-export").hidden = true;
   $("#drawing-row").hidden = true;
   const sel = $("#project-filter");
   const codes = [...new Set([...points.values()].map((p) => p.project))].sort(naturalCompare);
   sel.innerHTML = `<option value="">All projects</option>` +
-    codes.map((c) => `<option value="${esc(c)}">${esc(c)}${esc(master.projects.find((p) => p.code === c)?.name ? " – " + master.projects.find((p) => p.code === c).name : "")}</option>`).join("");
-  sel.value = state.projectFilter = "";
+    codes.map((c) => `<option value="${esc(c)}">${esc(c)}${names.get(c) ? " – " + esc(names.get(c)) : ""}</option>`).join("");
+  sel.value = state.projectFilter = codes.includes(filter) ? filter : "";
   $("#project-filter-row").hidden = false;
   layoutVars();
   map.setBackground(null);
@@ -385,7 +442,8 @@ async function fillProjectPicker() {
     return;
   }
   const projects = (await db.listProjects()).sort((a, b) => naturalCompare(a.code, b.code));
-  sel.innerHTML = projects.map((p) => `<option value="${esc(p.code)}">${esc(p.code)}${p.name ? " – " + esc(p.name) : ""}</option>`).join("");
+  sel.innerHTML = `<option value="${MASTER}">All projects (view only)</option>` +
+    projects.map((p) => `<option value="${esc(p.code)}">${esc(p.code)}${p.name ? " – " + esc(p.name) : ""}</option>`).join("");
   sel.value = state.project.code;
   $("#project-filter-row").hidden = false;
 }
@@ -398,8 +456,8 @@ function layoutVars() {
   if (nav?.offsetHeight) root.setProperty("--nav-h", `${nav.offsetHeight}px`);
 }
 
-function masterOrigin(master) {
-  const pos = master.control.map(positionOf).filter(Boolean);
+function masterOrigin(points) {
+  const pos = points.map(positionOf).filter(Boolean);
   if (!pos.length) return DEFAULT_ORIGIN;
   return [Math.floor(Math.min(...pos.map((p) => p.e)) / 100) * 100, Math.floor(Math.min(...pos.map((p) => p.n)) / 100) * 100];
 }
@@ -516,7 +574,10 @@ function showPanel() {
   st.hidden = p.status === "ok";
   st.textContent = STATUS_LABELS[p.status] || p.status;
   st.className = `status-text ${p.status}`;
-  $("#pt-next").hidden = ro || state.view !== "project";
+  const next = $("#pt-next");
+  const canOpen = state.view === "master" && state.localCodes?.has(p.project);
+  next.hidden = !(canOpen || (state.view === "project" && !ro));
+  next.textContent = canOpen ? `Open project ${p.project}` : "+ Next point";
   $("#pt-done").textContent = ro ? "Close" : "Done";
   $("#pt-readonly").hidden = !(ro && state.view === "master");
   const pos = positionOf(p);
@@ -957,7 +1018,7 @@ async function openFromLink() {
     await openProject(params.get("project"));
     return true;
   }
-  if (params.has("master") && state.master) {
+  if (params.has("master")) {
     await openMaster();
     return true;
   }
@@ -999,9 +1060,19 @@ function bind() {
   });
   $("#new-code").addEventListener("input", (e) => ($("#new-code-msg").textContent = e.target.value ? checkProjectCode(e.target.value) : ""));
   $("#new-project").onclick = newProject;
-  $("#open-master").onclick = () => openMaster();
+  $("#open-all").onclick = () => openMaster();
+  $("#more-projects").onclick = () => {
+    state.showAllProjects = !state.showAllProjects;
+    renderHome();
+  };
 
-  $("#btn-home").onclick = goHome;
+  // back arrow: first back to the map (close the list or the point), then to the projects
+  $("#btn-home").onclick = () => {
+    if (state.mode === "place") return finishPlacing(false);
+    const open = ["#list-panel", "#point-panel", "#layers-panel"].some((s) => !$(s).hidden);
+    if (open) closePanels();
+    else goHome();
+  };
   $("#btn-list").onclick = () => {
     const panel = $("#list-panel");
     panel.hidden = !panel.hidden;
@@ -1029,8 +1100,9 @@ function bind() {
     renderList();
   }));
   $("#project-filter").addEventListener("change", async (e) => {
-    if (state.view === "project") {                  // switch to another project on this phone
-      await openProject(e.target.value);
+    if (state.view === "project") {                  // switch to another project on this phone, or to all projects
+      if (e.target.value === MASTER) await openMaster(null, state.project.code);
+      else await openProject(e.target.value);
       $("#list-panel").hidden = false;
       renderList();
       return;
@@ -1048,8 +1120,14 @@ function bind() {
     closePanels();
     if (rec && !state.readonly) toast(`${rec.no} saved.`);
   };
-  $("#pt-next").onclick = () => {
+  $("#pt-next").onclick = async () => {
+    const rec = state.current;
     closePanels();
+    if (state.view === "master" && rec) {            // from all projects into the point's own project
+      await openProject(rec.project);
+      selectPoint(rec.no, true);
+      return;
+    }
     openNewDialog();
   };
   window.addEventListener("resize", layoutVars);
@@ -1113,6 +1191,8 @@ function bind() {
 }
 
 async function start() {
+  const standalone = navigator.standalone || window.matchMedia?.("(display-mode: standalone)").matches;
+  document.documentElement.classList.toggle("standalone", Boolean(standalone));
   bind();
   $("#app-version").textContent = `App version ${APP_VERSION}`;
   state.surveyor = await db.getSetting("surveyor", "");

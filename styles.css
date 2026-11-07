@@ -19,7 +19,7 @@
 }
 
 * { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--bg); overscroll-behavior: none; }
+html, body { margin: 0; height: 100%; background: var(--card); overscroll-behavior: none; }
 body { -webkit-tap-highlight-color: transparent; }
 [hidden] { display: none !important; }
 h1, h2, h3 { margin: 0; font-weight: 600; }
@@ -174,7 +174,7 @@ textarea.input { resize: vertical; }
 .bottom-nav {
   flex: none; display: grid; grid-template-columns: repeat(5, 1fr); align-items: end;
   background: var(--card); border-top: 1px solid var(--line);
-  padding: 4px 4px calc(env(safe-area-inset-bottom) + 4px); z-index: 4;
+  padding: 4px 4px 4px; z-index: 4;
 }
 .bottom-nav button {
   display: grid; justify-items: center; gap: 1px; min-height: 52px; padding: 4px 2px; border: 0; background: none;
@@ -193,7 +193,7 @@ textarea.input { resize: vertical; }
   display: grid; place-items: center; font-size: 1.8rem; box-shadow: 0 2px 8px rgba(24,100,171,.45);
 }
 .form-foot {
-  flex: none; display: flex; gap: 8px; padding: 10px 12px calc(env(safe-area-inset-bottom) + 10px);
+  flex: none; display: flex; gap: 8px; padding: 10px 12px;
   border-top: 1px solid var(--line); background: var(--card);
 }
 .form-foot .btn { flex: 1; min-height: 48px; font-size: 1rem; }
@@ -247,6 +247,8 @@ dialog form { padding: 18px; display: grid; gap: 12px; }
 dialog p { margin: 0; }
 dialog::backdrop { background: rgba(0,0,0,.35); }
 .dialog-foot { display: flex; justify-content: flex-end; gap: 8px; }
+.dialog-col { display: grid; gap: 8px; }
+.dialog-col .btn { white-space: normal; text-align: center; min-height: 48px; }
 .photo-dialog { width: min(900px, calc(100% - 16px)); }
 .photo-dialog img { width: 100%; max-height: 75vh; object-fit: contain; background: #111; border-radius: 8px; }
 .toast {
@@ -266,3 +268,9 @@ dialog::backdrop { background: rgba(0,0,0,.35); }
   .layers-panel { left: 12px; width: auto; }
   .row2 { grid-template-columns: 1fr; }
 }
+
+/* ---- bottom of the screen: opened from the home screen icon the bars keep clear of the home indicator; in the
+   Safari browser its own toolbar is below the page, so no extra space is needed */
+#home { background: var(--bg); }
+.standalone .bottom-nav { padding-bottom: max(6px, calc(env(safe-area-inset-bottom) - 12px)); }
+.standalone .form-foot { padding-bottom: max(10px, calc(env(safe-area-inset-bottom) - 8px)); }

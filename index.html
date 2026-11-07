@@ -29,10 +29,16 @@
     <div id="setup-note" class="note" hidden>Enter your name and personal prefix first (Surveyor, below).</div>
     <div id="backup-note" class="note" hidden></div>
     <div class="card">
-      <h2>Projects on this phone</h2>
+      <h2 id="projects-title">Projects on this phone</h2>
       <ul id="project-list" class="project-list"></ul>
+      <button class="btn ghost small" id="more-projects" type="button" hidden></button>
       <p id="no-projects" class="muted">No projects yet. Open a project pack from the office, or start a project
         with its code below.</p>
+    </div>
+    <div class="card" id="all-card" hidden>
+      <h2>All control points</h2>
+      <p id="all-info" class="muted small"></p>
+      <button class="btn" id="open-all" type="button">View all projects on the map</button>
     </div>
     <div class="card">
       <h2>Open a pack from the office</h2>
@@ -53,10 +59,11 @@
       <p class="muted small">Without a project pack the map shows OneMap only. Open the project pack later to add
         the drawing; points recorded here are kept.</p>
     </div>
-    <div class="card" id="master-card" hidden>
-      <h2>Master register</h2>
-      <p id="master-info" class="muted small"></p>
-      <button class="btn" id="open-master">View all control points</button>
+    <div class="card" id="retired-card" hidden>
+      <h2>Numbers of removed projects</h2>
+      <p class="muted small">These numbers stay used after their project was removed. If a project was only a test,
+        free its numbers so they can be given again.</p>
+      <ul id="retired-list" class="project-list"></ul>
     </div>
     <div class="card">
       <h2>Surveyor</h2>
@@ -170,8 +177,8 @@
       <button class="icon-btn" id="pt-close" aria-label="Back to the map">&times;</button>
     </div>
     <div class="form-body">
-      <div id="pt-readonly" class="note small" hidden>Master register: view only. Open the point's project to
-        change it.</div>
+      <div id="pt-readonly" class="note small" hidden>All projects: view only. To change this point, open its
+        project (button below).</div>
 
       <section class="group">
         <h3>Surveyed coordinates</h3>
@@ -278,6 +285,19 @@
     <div class="dialog-foot">
       <button class="btn danger" id="photo-remove" type="button">Remove</button>
       <button class="btn" value="close">Close</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- Remove a project -->
+<dialog id="remove-dialog">
+  <form method="dialog">
+    <h2 id="rm-title"></h2>
+    <p id="rm-text" class="small"></p>
+    <div class="dialog-col">
+      <button class="btn" value="keep">Remove – real points, keep the numbers used</button>
+      <button class="btn danger" value="free" id="rm-free">Remove – test only, free the numbers</button>
+      <button class="btn ghost" value="cancel">Cancel</button>
     </div>
   </form>
 </dialog>
